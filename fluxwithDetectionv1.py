@@ -1,0 +1,68 @@
+import cv2
+import numpy as np
+import matplotlib.pyplot as plt
+import csv
+
+# 1. 이미지 불러오기
+image = cv2.imread('sample.jpeg')  # 파일 경로에 맞게 수정
+gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)  # 그레이스케일로 변환
+
+# 2. GaussianBlur 적용하여 노이즈 제거 및 별 감지 강화
+blurred_image = cv2.GaussianBlur(gray_image, (9, 9), 0)
+
+# 3. Thresholding: 밝은 별을 감지하기 위한 이진화 처리
+_, thresholded_image = cv2.threshold(blurred_image, 40, 255, cv2.THRESH_BINARY)
+
+# 4. Morphological Erosion으로 빛 번짐 제거 (작은 커널 사용)
+kernel = np.ones((3, 3), np.uint8)
+eroded_image = cv2.erode(thresholded_image, kernel, iterations=1)
+
+# 5. Contour 찾기
+contours, _ = cv2.findContours(eroded_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+# 6. 별을 흑백 이미지에 빨간색 원과 번호로 표시
+annotated_image = cv2.cvtColor(gray_image, cv2.COLOR_GRAY2BGR)  # 원을 그리기 위해 흑백 이미지를 BGR로 변환
+
+# 인식된 별들의 정보를 저장할 리스트
+star_info = []
+
+# 7. 별의 위치와 크기를 기반으로 플럭스(광도) 계산
+for idx, contour in enumerate(contours):
+    # 최소 외접 원 찾기 (별을 감쌀 수 있는 최소 원)
+    (x, y), radius = cv2.minEnclosingCircle(contour)
+    center = (int(x), int(y))  # 별의 중심 좌표
+    radius = int(radius)  # 반지름을 정수로 변환
+
+    # 원을 그리기 (빨간색)
+    cv2.circle(annotated_image, center, radius, (0, 0, 255), 2)
+    # 별 번호 표시
+    cv2.putText(annotated_image, f'{idx + 1}', (int(x) - 10, int(y) - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+
+    # 별의 영역에서 플럭스 계산 (반지름 내의 픽셀 값 합산)
+    mask = np.zeros_like(gray_image, dtype=np.uint8)  # 별의 마스크 생성
+    cv2.circle(mask, center, radius, 255, -1)  # 마스크에 원을 그려 별의 영역 정의
+    flux = np.sum(gray_image[mask == 255])  # 마스크된 영역 내의 픽셀 값 합산 (플럭스 계산)
+
+    # 별 번호, 중심 좌표, 크기 정보, 플럭스 저장
+    star_info.append((idx + 1, center, radius, flux))
+
+# 별 정보와 플럭스 출력
+print("인식된 별 정보 (번호, 위치(중심 좌표), 크기(반지름), 플럭스):")
+for info in star_info:
+    print(f"별 {info[0]}: 위치 = {info[1]}, 크기(반지름) = {info[2]}, 플럭스 = {info[3]}")
+
+# 8. 인식된 별 정보와 플럭스를 CSV 파일로 저장
+csv_filename = 'star_flux_data.csv'
+with open(csv_filename, mode='w', newline='') as file:
+    writer = csv.writer(file)
+    writer.writerow(['번호', '중심 좌표(x, y)', '반지름', '플럭스'])  # CSV 파일 헤더 작성
+    for info in star_info:
+        writer.writerow([info[0], info[1], info[2], info[3]])  # 각 별의 정보와 플럭스 기록
+
+print(f"인식된 별 정보가 {csv_filename} 파일에 저장되었습니다.")
+
+# 9. 흑백 이미지에 빨간색 원과 번호 표시 후 시각화
+plt.figure(figsize=(10, 10))
+plt.imshow(cv2.cvtColor(annotated_image, cv2.COLOR_BGR2RGB))  # BGR에서 RGB로 변환하여 표시
+plt.title("Detected Stars with Red Circles and Numbers (Flux Calculated)")
+plt.show()
